@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>분실물 찾기 — Jakarta Korean International School</title>
+<style>
+  :root{
+    --primary:#0B3D2E; /* deep green */
+    --accent:#7CC242;  /* light green */
+    --bg:#F4F9F0;
+    --muted:#4b5a4d;
+    --card-bg:#ffffff;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  body{font-family:"Noto Sans KR",system-ui,-apple-system,"Segoe UI",Roboto,Arial;margin:0;background:var(--bg);color:#111}
+  header{display:flex;align-items:center;background:var(--primary);color:#fff;padding:12px 16px;gap:12px}
+  header img.logo{width:56px;height:56px;object-fit:contain;border-radius:8px;background:#fff;padding:6px}
+  header h1{margin:0;font-size:18px}
+  header p{margin:0;font-size:13px;opacity:0.9}
+  main{max-width:980px;margin:18px auto;padding:12px; position: relative;} /* character positioned relative to main */
+  .controls{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+  .view-toggle, .admin-btn { padding:8px 12px;border-radius:8px;border:0;cursor:pointer;font-weight:700 }
+  .view-toggle{background:var(--accent);color:var(--primary)}
+  .admin-btn{background:#fff;color:var(--primary);border:2px solid rgba(255,255,255,0.12)}
+  .admin-form{display:none;background:var(--card-bg);padding:12px;border-radius:12px;border-left:6px solid var(--accent);box-shadow:0 6px 18px rgba(0,0,0,0.06);margin-bottom:14px;gap:8px;flex-wrap:wrap}
+  .admin-form input[type="text"], .admin-form input[type="date"]{padding:10px;border-radius:8px;border:1px solid #e6e8ee;width:100%}
+  .admin-form input[type="file"]{padding:6px;width:100%}
+  .btn-primary{background:var(--primary);color:white;padding:10px 14px;border-radius:8px;border:0;cursor:pointer}
+  .btn-delete{background:#d9534f;color:white;padding:10px 12px;border-radius:8px;border:0;cursor:pointer}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .card{background:var(--card-bg);border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,0.04);position:relative;border:1px solid #eef1ec;min-height:200px}
+  .card img{width:100%;height:140px;object-fit:cover;display:block;background:#f0f0f0}
+  .card-body{padding:12px}
+  .name{font-weight:700;color:var(--primary)}
+  .meta{color:var(--muted);font-size:13px;margin-top:6px}
+  .edit-icon{position:absolute;right:8px;top:8px;background:rgba(0,0,0,0.55);color:#fff;padding:6px;border-radius:8px;display:none;cursor:pointer}
+  .card:hover .edit-icon{display:block}
+  .table{width:100%;border-collapse:collapse;background:transparent}
+  .table th,.table td{border:1px solid #e6eddf;padding:8px;text-align:left;background:#fff}
+  .table img{width:100px;height:60px;object-fit:cover;border-radius:6px}
+  .admin-indicator{display:none;padding:6px 10px;border-radius:999px;background:var(--accent);color:var(--primary);font-weight:700}
+  .admin-mode .admin-indicator{display:inline-block}
+  /* remove floating add/admin duplicates: no fab displayed by default */
+  .fab{display:none}
+  .fab-small{display:none}
+  .backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:none;align-items:center;justify-content:center;z-index:999}
+  .modal{background:#fff;padding:16px;border-radius:12px;width:92%;max-width:420px}
+  .modal h3{margin:0 0 8px}
+  /* character image inside main: anchored to bottom-right of main, so it moves down when page content grows */
+  .character{
+    position:absolute;
+    right:8px;
+    bottom:-20px; /* lowered so character sits further down */
+    width:220px; /* increased size */
+    max-width:28%;
+    opacity:0.98;
+    pointer-events:none; /* won't block clicks */
+  }
+  @media(max-width:600px){
+    header p{display:none}
+    .card img{height:120px}
+    .table img{width:70px;height:50px}
+    .character{width:140px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <!-- LOGO: use local file `logo.png` in the same folder as index.html -->
+  <img class="logo" id="site-logo" src="logo.png" alt="JIKS Logo">
+  <div>
+    <h1>분실물 찾기</h1>
+    <p>Jakarta Indonesia Korean School</p>
+  </div>
+  <div style="flex:1"></div>
+  <div id="admin-indicator" class="admin-indicator">관리자 모드</div>
+</header>
+
+<main>
+  <div class="container" style="max-width:980px;margin:auto;padding:12px">
+    <div class="controls">
+      <button id="toggleView" class="view-toggle">테이블 보기</button>
+      <div style="flex:1"></div>
+      <!-- SINGLE ADMIN BUTTON -->
+      <button id="openAdmin" class="admin-btn">관리자</button>
+      <div style="width:8px"></div>
+      <div id="modeBadge" style="display:none;color:var(--muted);font-weight:700">보기: 카드</div>
+    </div>
+
+    <!-- admin form (hidden until admin mode) -->
+    <div id="adminForm" class="admin-form" style="display:none">
+      <div style="flex:1;min-width:160px"><input id="inName" type="text" placeholder="물건 이름"></div>
+      <div style="flex:1;min-width:140px"><input id="inPlace" type="text" placeholder="장소 (예: 도서관)"></div>
+      <div style="min-width:140px"><input id="inDate" type="date"></div>
+      <div style="min-width:180px"><input id="inFile" type="file" accept="image/*"></div>
+      <div style="display:flex;gap:8px">
+        <!-- KEEP ONLY THIS ADD BUTTON -->
+        <button id="btnAdd" class="btn-primary">추가</button>
+        <button id="btnDeleteSelected" class="btn-delete">선택 삭제</button>
+      </div>
+    </div>
+
+    <!-- Views -->
+    <section id="gridView">
+      <div id="grid" class="grid"></div>
+      <div id="emptyGrid" style="display:none;padding:18px;background:#fff;border-radius:10px;margin-top:12px;text-align:center;color:var(--muted)">등록된 분실물이 없습니다.</div>
+    </section>
+
+    <section id="tableView" style="display:none">
+      <table id="table" class="table" style="width:100%"></table>
+      <div id="emptyTable" style="display:none;padding:18px;background:#fff;border-radius:10px;margin-top:12px;text-align:center;color:var(--muted)">등록된 분실물이 없습니다.</div>
+    </section>
+  </div>
+
+  <!-- CHARACTER IMAGE placed inside main so it moves down with content -->
+  <img class="character" id="character-img" src="character.png" alt="character">
+</main>
+
+<!-- modal area -->
+<div id="backdrop" class="backdrop" aria-hidden="true">
+  <div id="modal" class="modal" role="dialog" aria-modal="true" style="display:none"></div>
+</div>
+
+<script>
+/* ---------- CONFIG & STATE ---------- */
+const STORAGE_KEY = 'jkis_lost_items_v4';
+let items = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+let adminMode = false;
+let viewIsTable = false;
+// multi-selection state: set of selected ids and last selected index for shift-range
+let selectedIds = new Set();
+let lastSelectedIndex = null;
+
+/* ---------- ELEMENTS ---------- */
+const grid = document.getElementById('grid');
+const table = document.getElementById('table');
+const gridView = document.getElementById('gridView');
+const tableView = document.getElementById('tableView');
+const emptyGrid = document.getElementById('emptyGrid');
+const emptyTable = document.getElementById('emptyTable');
+const adminIndicator = document.getElementById('admin-indicator');
+const adminForm = document.getElementById('adminForm');
+const toggleViewBtn = document.getElementById('toggleView');
+const openAdminBtn = document.getElementById('openAdmin');
+const backdrop = document.getElementById('backdrop');
+const modal = document.getElementById('modal');
+
+/* ---------- HELPERS ---------- */
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
+function genId(){ return Math.random().toString(36).slice(2,9); }
+function escape(s=''){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* convert file -> base64 */
+function fileToBase64(file){
+  return new Promise((res, rej)=>{
+    const reader = new FileReader();
+    reader.onload = ()=> res(reader.result);
+    reader.onerror = (e)=> rej(e);
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ---------- RENDER ---------- */
+function render(){
+  // grid
+  grid.innerHTML = '';
+  if(items.length === 0){
+    emptyGrid.style.display = 'block';
+    emptyTable.style.display = 'block';
+  } else {
+    emptyGrid.style.display = 'none';
+    emptyTable.style.display = 'none';
+  }
+
+  for(const it of items){
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.id = it.id;
+    card.innerHTML = `
+      <div class="edit-icon" title="수정">✎</div>
+      <img src="${escape(it.photo || 'https://via.placeholder.com/800x600?text=No+Image')}" alt="${escape(it.name)}">
+      <div class="card-body">
+        <div class="name">${escape(it.name)}</div>
+        <div class="meta">${escape(it.place)} • ${escape(it.date)}</div>
+      </div>
+    `;
+    const editIcon = card.querySelector('.edit-icon');
+    editIcon.addEventListener('click', e=>{
+      e.stopPropagation();
+      openEditModal(it.id);
+    });
+    card.addEventListener('click', (e)=>{
+      if(adminMode) selectCard(it.id, e);
+      else showDetail(it);
+    });
+    // show edit affordance and selection outline when in admin mode
+    if(adminMode) card.classList.add('show-edit');
+    card.style.outline = selectedIds.has(it.id) ? '3px solid rgba(124,223,74,0.24)' : 'none';
+    grid.appendChild(card);
+  }
+
+  renderTable();
+}
+
+function renderTable(){
+  if(items.length === 0){ table.innerHTML = ''; return; }
+  let html = `<thead><tr><th>사진</th><th>물건 이름</th><th>장소</th><th>날짜</th>${adminMode?'<th>액션</th>':''}</tr></thead><tbody>`;
+  for(const it of items){
+    html += `<tr data-id="${it.id}">
+      <td><img src="${escape(it.photo || 'https://via.placeholder.com/400x300?text=No+Image')}" alt="${escape(it.name)}" style="max-width:120px;max-height:80px;object-fit:cover;border-radius:6px"></td>
+      <td>${escape(it.name)}</td>
+      <td>${escape(it.place)}</td>
+      <td>${escape(it.date)}</td>
+      ${adminMode?`<td><button onclick="openEditModal('${it.id}')">수정</button> <button onclick="deleteItem('${it.id}')">삭제</button></td>` : ''}
+    </tr>`;
+  }
+  html += `</tbody>`;
+  table.innerHTML = html;
+}
+
+/* ---------- selection ---------- */
+function selectCard(id, e){
+  const idx = items.findIndex(x => x.id === id);
+  if(idx === -1) return;
+
+  // Shift: select range from lastSelectedIndex to current
+  if(e && e.shiftKey && lastSelectedIndex !== null){
+    const start = Math.min(lastSelectedIndex, idx);
+    const end = Math.max(lastSelectedIndex, idx);
+    for(let i = start; i <= end; i++) selectedIds.add(items[i].id);
+  }
+  // Ctrl / Cmd: toggle single item
+  else if(e && (e.ctrlKey || e.metaKey)){
+    if(selectedIds.has(id)) selectedIds.delete(id);
+    else selectedIds.add(id);
+    lastSelectedIndex = idx;
+  }
+  // plain click: select only this
+  else {
+    selectedIds.clear();
+    selectedIds.add(id);
+    lastSelectedIndex = idx;
+  }
+
+  document.querySelectorAll('.card').forEach(c=>{
+    c.style.outline = selectedIds.has(c.dataset.id) ? '3px solid rgba(124,223,74,0.24)' : 'none';
+  });
+}
+
+/* ---------- detail modal ---------- */
+function showDetail(it){
+  modal.innerHTML = `
+    <h3>${escape(it.name)}</h3>
+    <div style="margin-top:8px"><img src="${escape(it.photo||'https://via.placeholder.com/800x600?text=No+Image')}" style="width:100%;border-radius:8px;max-height:300px;object-fit:cover"></div>
+    <div style="margin-top:10px;color:var(--muted)">${escape(it.place)} • ${escape(it.date)}</div>
+    <div style="margin-top:12px;text-align:right"><button onclick="closeModal()">닫기</button></div>
+  `;
+  backdrop.style.display = 'flex'; modal.style.display = 'block';
+}
+function closeModal(){ backdrop.style.display = 'none'; modal.style.display='none'; modal.innerHTML=''; }
+backdrop.addEventListener('click', e=> { if(e.target === backdrop) closeModal(); });
+
+/* ---------- admin login / logout (SINGLE BUTTON) ---------- */
+openAdminBtn.addEventListener('click', ()=>{
+  if(!adminMode){
+    // show password modal
+    modal.innerHTML = `
+      <h3>관리자 로그인</h3>
+      <div style="margin-top:8px"><input id="pwField" type="password" placeholder="비밀번호" style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd"></div>
+      <div style="margin-top:10px;text-align:right;"><button id="pwCancel">취소</button> <button id="pwOk" class="btn-primary">확인</button></div>
+      <div id="pwErr" style="color:#c33;margin-top:8px;display:none"></div>
+    `;
+    backdrop.style.display = 'flex'; modal.style.display = 'block';
+    document.getElementById('pwCancel').onclick = ()=> closeModal();
+    document.getElementById('pwOk').onclick = ()=>{
+      const v = document.getElementById('pwField').value.trim();
+      if(v === 'jiks1234'){
+        adminMode = true;
+        enterAdmin();
+        closeModal();
+        alert('관리자 모드 활성화되었습니다.');
+      } else {
+        const e = document.getElementById('pwErr'); e.textContent = '비밀번호가 틀립니다'; e.style.display = 'block';
+      }
+    };
+  } else {
+    // logout
+      if(confirm('관리자 모드를 종료하시겠습니까?')) {
+        adminMode = false;
+        exitAdmin();
+        // change button label back to 관리자
+        openAdminBtn.textContent = '관리자';
+      }
+  }
+});
+
+/* ---------- enter/exit admin ---------- */
+function enterAdmin(){
+  document.body.classList.add('admin-mode');
+  adminIndicator.style.display = 'inline-block';
+  adminForm.style.display = 'flex';
+  // change admin button to '관리자 종료'
+  openAdminBtn.textContent = '관리자 종료';
+  render();
+}
+function exitAdmin(){
+  document.body.classList.remove('admin-mode');
+  adminIndicator.style.display = 'none';
+  adminForm.style.display = 'none';
+  selectedIds.clear();
+  lastSelectedIndex = null;
+  render();
+}
+
+/* ---------- add item (file upload -> base64) ---------- */
+document.getElementById('btnAdd').addEventListener('click', async ()=>{
+  const name = document.getElementById('inName').value.trim();
+  const place = document.getElementById('inPlace').value.trim();
+  const date = document.getElementById('inDate').value;
+  const file = document.getElementById('inFile').files[0];
+
+  if(!name){ alert('물건 이름을 입력하세요'); return; }
+
+  let photo = '';
+  if(file){
+    try { photo = await fileToBase64(file); } catch(e){ console.error(e); alert('이미지 읽기 실패'); return; }
+  }
+
+  items.unshift({ id: genId(), name, place, date, photo });
+  save(); clearAdminInputs(); render();
+});
+
+function clearAdminInputs(){ document.getElementById('inName').value=''; document.getElementById('inPlace').value=''; document.getElementById('inDate').value=''; document.getElementById('inFile').value=''; }
+
+/* ---------- delete ---------- */
+document.getElementById('btnDeleteSelected').addEventListener('click', ()=>{
+  if(selectedIds.size === 0){ alert('삭제할 항목을 먼저 선택하세요 (카드 클릭)'); return; }
+  if(!confirm('선택 항목을 삭제하시겠습니까?')) return;
+  items = items.filter(x=> !selectedIds.has(x.id));
+  selectedIds.clear();
+  lastSelectedIndex = null;
+  save(); render();
+});
+function deleteItem(id){
+  if(!confirm('정말 삭제하시겠습니까?')) return;
+  items = items.filter(x => x.id !== id);
+  save(); render();
+}
+
+/* ---------- edit existing ---------- */
+function openEditModal(id){
+  const it = items.find(x=>x.id===id);
+  if(!it) return;
+  modal.innerHTML = `
+    <h3>항목 수정</h3>
+    <div style="margin-top:8px"><input id="eName" type="text" value="${escape(it.name)}" style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd"></div>
+    <div style="margin-top:8px"><input id="ePlace" type="text" value="${escape(it.place)}" style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd"></div>
+    <div style="margin-top:8px"><input id="eDate" type="date" value="${escape(it.date)}" style="width:100%;padding:8px;border-radius:8px;border:1px solid #ddd"></div>
+    <div style="margin-top:8px"><input id="eFile" type="file" accept="image/*" style="width:100%"></div>
+    <div style="margin-top:12px;text-align:right">
+      <button id="cancelEdit">취소</button>
+      <button id="deleteEdit" class="btn-delete">삭제</button>
+      <button id="saveEdit" class="btn-primary">저장</button>
+    </div>
+  `;
+  backdrop.style.display = 'flex'; modal.style.display = 'block';
+  document.getElementById('cancelEdit').onclick = ()=> closeModal();
+  document.getElementById('deleteEdit').onclick = ()=> { if(confirm('삭제하시겠습니까?')){ items = items.filter(x=>x.id!==id); save(); closeModal(); render(); } };
+  document.getElementById('saveEdit').onclick = async ()=>{
+    const n = document.getElementById('eName').value.trim(); if(!n){ alert('이름은 필수입니다'); return; }
+    const p = document.getElementById('ePlace').value.trim();
+    const d = document.getElementById('eDate').value;
+    const f = document.getElementById('eFile').files[0];
+    if(f){
+      try { it.photo = await fileToBase64(f); } catch(e){ console.error(e); alert('이미지 읽기 실패'); return; }
+    }
+    it.name = n; it.place = p; it.date = d;
+    save(); closeModal(); render();
+  };
+}
+
+/* ---------- view toggle ---------- */
+toggleViewBtn.addEventListener('click', ()=>{
+  viewIsTable = !viewIsTable;
+  if(viewIsTable){
+    gridView.style.display = 'none'; tableView.style.display = 'block';
+    toggleViewBtn.textContent = '카드 보기'; document.getElementById('modeBadge').textContent = '보기: 테이블';
+  } else {
+    gridView.style.display = 'block'; tableView.style.display = 'none';
+    toggleViewBtn.textContent = '테이블 보기'; document.getElementById('modeBadge').textContent = '보기: 카드';
+  }
+});
+
+/* ---------- init ---------- */
+function init(){
+  gridView.style.display = 'block'; tableView.style.display = 'none';
+  document.getElementById('modeBadge').textContent = '보기: 카드';
+  render();
+}
+init();
+
+/* expose some functions used by inline handlers in table rows */
+window.openEditModal = openEditModal;
+window.deleteItem = deleteItem;
+window.closeModal = closeModal;
+window.selectCard = selectCard;
+</script>
+
+</body>
+</html>
